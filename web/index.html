@@ -1,0 +1,475 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>NSFW Detector - CPU vs WebGPU</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px 16px;
+      font-family: Arial, sans-serif;
+      color: #111827;
+      background: #f3f4f6;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 30px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.06);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 26px;
+    }
+
+    .description {
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 24px 0;
+      padding: 14px;
+      border-radius: 10px;
+      background: #f1f5f9;
+      font-size: 14px;
+    }
+
+    .badge {
+      padding: 7px 12px;
+      border-radius: 7px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-weight: bold;
+    }
+
+    .provider-selector {
+      margin: 20px 0;
+    }
+
+    .provider-selector label {
+      display: block;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    .provider-selector select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: white;
+      font-size: 15px;
+    }
+
+    .hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .upload {
+      padding: 32px;
+      text-align: center;
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+    }
+
+    button {
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    button:disabled,
+    select:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    #preview {
+      display: none;
+      max-width: 100%;
+      max-height: 400px;
+      margin: 20px auto 0;
+      border-radius: 8px;
+    }
+
+    #results {
+      display: none;
+      margin-top: 30px;
+    }
+
+    .metric {
+      margin: 20px 0;
+    }
+
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+
+    .bar {
+      height: 16px;
+      background: #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      width: 0;
+      transition: width .25s ease;
+      background: #2563eb;
+    }
+
+
+    .fill[data-class="SFW"] {
+      background: #16a34a;
+    }
+
+    .fill[data-class="NSFW"] {
+      background: #dc2626;
+    }
+
+    .metrics {
+      margin-top: 24px;
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
+    .metrics div {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .metrics div:last-child {
+      border-bottom: none;
+    }
+
+    #error {
+      display: none;
+      padding: 16px;
+      margin-top: 20px;
+      background: #fee2e2;
+      color: #991b1b;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .benchmark {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+    }
+
+    .benchmark h3 {
+      margin-top: 0;
+    }
+
+    .benchmark table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .benchmark th,
+    .benchmark td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .benchmark th {
+      color: #64748b;
+    }
+    .batch-panel {
+      margin-top: 24px;
+      padding: 20px;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+    }
+
+    .batch-panel h2 { margin-top: 0; }
+    .batch-controls { display: flex; gap: 10px; flex-wrap: wrap; }
+    .secondary-button { background: #475569; }
+    #batchCancelButton { background: #dc2626; }
+    #batchProgress { width: 100%; height: 20px; accent-color: #2563eb; }
+    #batchProgressPanel { margin-top: 20px; }
+    #batchProgressText, #batchSummary { line-height: 1.6; overflow-wrap: anywhere; }
+    .table-scroll { overflow-x: auto; }
+    .batch-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .batch-table th, .batch-table td {
+      padding: 12px 8px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .batch-table th { color: #64748b; }
+    .histogram-card { margin-top: 20px; padding: 14px; background: #f8fafc; border-radius: 10px; }
+    .histogram-card h4 { margin: 0 0 8px; }
+    .histogram-card svg { display: block; width: 100%; height: auto; }
+    .histogram-card p { margin: 8px 0 0; }
+    .histogram-bar { fill: #2563eb; }
+    .histogram-bar:hover, .histogram-bar:focus { fill: #1e40af; }
+    .batch-errors { margin-top: 16px; color: #991b1b; overflow-wrap: anywhere; }
+    [hidden] { display: none !important; }
+    @media (max-width: 480px) {
+      .container { padding: 18px; }
+      .batch-panel { padding: 12px; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="container">
+
+    <h1>NSFW Image Detector</h1>
+
+    <p class="description">
+      Run NSFW image detection locally using
+      OpenNSFW2 (ONNX Runtime Web) or NSFWJS (TensorFlow.js).
+      Switch between CPU and WebGPU to compare performance.
+    </p>
+
+    <!-- MODEL STATUS -->
+
+    <div class="status">
+      <span id="modelStatus">
+        Initializing...
+      </span>
+
+      <span id="provider" class="badge">
+        Not ready
+      </span>
+    </div>
+
+    <!-- MODEL SELECTION -->
+
+    <div class="provider-selector">
+      <label for="modelChoice">Model</label>
+      <select id="modelChoice" disabled>
+        <option value="opennsfw2">opennsfw2</option>
+        <option value="nsfwjs">nsfwjs</option>
+      </select>
+    </div>
+
+    <!-- EXECUTION PROVIDER -->
+
+    <div class="provider-selector">
+
+      <label for="executionMode">
+        Inference Device
+      </label>
+
+      <select id="executionMode" disabled>
+        <option value="wasm">
+          CPU (WebAssembly)
+        </option>
+
+        <option value="webgpu">
+          WebGPU
+        </option>
+      </select>
+
+      <div id="deviceHint" class="hint">
+        CPU runs using WASM.
+        WebGPU prefers GPU execution with optional WASM
+        operator fallback.
+      </div>
+
+    </div>
+
+    <!-- IMAGE UPLOAD -->
+
+    <div class="upload">
+
+      <input
+        id="fileInput"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+      >
+
+      <button id="selectButton" disabled>
+        Select Image
+      </button>
+
+      <img
+        id="preview"
+        alt="Selected image"
+      >
+
+    </div>
+
+    <!-- ERROR -->
+
+    <div id="error"></div>
+
+    <!-- FOLDER BATCH TEST -->
+
+    <section class="batch-panel" aria-labelledby="batchHeading">
+      <h2 id="batchHeading">Batch test</h2>
+      <p class="description">
+        Select a folder of JPG, PNG or WebP images, including subfolders.
+        Each image belongs to the class with the highest probability.
+      </p>
+      <input id="folderInput" type="file" webkitdirectory multiple hidden>
+      <div class="batch-controls">
+        <button id="folderButton" disabled>Select Folder</button>
+        <button id="batchRunButton" class="secondary-button" disabled>Run Again</button>
+        <button id="batchCancelButton" hidden>Stop</button>
+      </div>
+      <div id="batchProgressPanel" hidden>
+        <p id="batchProgressText" role="status" aria-live="polite"></p>
+        <progress id="batchProgress" max="1" value="0" aria-label="Images processed"></progress>
+      </div>
+      <div id="batchReport" hidden>
+        <h3 id="batchReportTitle">Folder results</h3>
+        <p id="batchSummary" class="description"></p>
+        <div class="table-scroll">
+          <table class="batch-table">
+            <thead><tr>
+              <th>Class</th><th>Images</th><th>Share</th><th>Most common probability range</th>
+            </tr></thead>
+            <tbody id="batchClassRows"></tbody>
+          </table>
+        </div>
+        <h3>Probability distribution</h3>
+        <p class="description">
+          Each chart includes images assigned to that class only.
+          X: predicted class probability (0–100%). Y: image count.
+          Bins are 10% wide; hover or focus a bar for its count.
+          Class shares use successfully processed images.
+        </p>
+        <div id="batchCharts"></div>
+        <details id="batchErrorDetails" class="batch-errors" hidden>
+          <summary id="batchErrorSummary"></summary>
+          <ul id="batchErrors"></ul>
+        </details>
+      </div>
+    </section>
+
+    <!-- PREDICTION -->
+
+    <section id="results">
+
+      <h2>Prediction</h2>
+
+      <div id="classResults" aria-live="polite"></div>
+
+      <!-- PERFORMANCE -->
+
+      <div class="metrics">
+
+        <div>
+          <span>Execution provider</span>
+          <strong id="executionProvider">-</strong>
+        </div>
+
+        <div>
+          <span id="preprocessLabel">Preprocessing</span>
+          <strong id="preprocessTime">-</strong>
+        </div>
+
+        <div>
+          <span id="inferenceLabel">Inference</span>
+          <strong id="inferenceTime">-</strong>
+        </div>
+
+        <div>
+          <span>Total processing</span>
+          <strong id="totalTime">-</strong>
+        </div>
+
+      </div>
+
+      <!-- BENCHMARK -->
+
+      <div class="benchmark">
+
+        <h3>Performance comparison</h3>
+
+        <p class="description">
+          Last measured time for each device on the selected model.
+          Select the same image on both devices to compare.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th id="benchmarkTimeLabel">Inference time</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr>
+              <td>CPU / WASM</td>
+              <td id="cpuBenchmark">-</td>
+            </tr>
+
+            <tr>
+              <td id="gpuBenchmarkLabel">WebGPU + WASM</td>
+              <td id="gpuBenchmark">-</td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ONNX Runtime WebGPU distribution -->
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.webgpu.min.js"
+  ></script>
+
+  <!-- Matching TensorFlow.js versions for CPU/WASM and WebGPU. -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/tf-backend-wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu@4.22.0/dist/tf-backend-webgpu.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nsfwjs@4.4.0/dist/browser/nsfwjs.min.js"></script>
+
+  <script src="./app.js"></script>
+
+</body>
+</html>
